@@ -12,6 +12,7 @@
 # This code is distributed on an "AS IS" BASIS WITHOUT WARRANTIES OF ANY KIND, express or implied.
 # Please review LICENSE file before use.
 
+import os
 import numpy as np
 import tensorflow as tf
 from PIL import Image as img
@@ -22,6 +23,8 @@ import sys
 import time
 import model
 import starnet_utils
+
+import cv2
 
 WINDOW_SIZE = 256                      # Size of the image fed to net. Do not change until you know what you are doing! Default is 256
                                        # and changing this will force you to train the net anew.
@@ -52,13 +55,17 @@ def transform(image, stride):
         
         # read input image
         print("Opening input image...")
-        input = np.array(img.open(image), dtype = np.float32)
-        print("Done!")
+        # input = np.array(img.open(image), dtype = np.float32)
+        input = cv2.imread(image,-1)
         
-        # rescale to [-1, 1]
-        input /= 255
         # backup to use for mask
         backup = np.copy(input)
+
+        input = cv2.cvtColor(input, cv2.COLOR_BGR2RGB).astype("float32")
+        print("Done!")
+
+        # rescale to [-1, 1]
+        input /= 65535
         input = input * 2 - 1
         
         
@@ -119,14 +126,26 @@ def transform(image, stride):
         output = output[offset : - (offset + dh), offset : - (offset + dw), :]
         
         print("Saving output image...")
-        toimage(output * 255, cmin = 0, cmax = 255).save('./' + image + '_starless.tif')
+        output = cv2.cvtColor((output*65535).astype("uint16"), cv2.COLOR_RGB2BGR)
+        image = image[:-4]
+        cv2.imwrite('./' + image + '_starless.tif', output)
         print("Done!")
         
         print("Saving mask...")
         # mask showing areas that were changed significantly
-        mask = (((backup * 255).astype(np.int_) - (output * 255).astype(np.int_)) > 25).astype(np.int_)
-        mask = mask.max(axis = 2, keepdims = True)
-        mask = np.concatenate((mask, mask, mask), axis = 2)
-        toimage(mask * 255, cmin = 0, cmax = 255).save('./' + image + '_mask.tif')
+        mask = backup - np.array([output,backup]).min(axis=0)
+        cv2.imwrite('./' + image + '_mask.tif', mask)
         print("Done!")
-    
+
+
+if __name__ == "__main__":
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+    from starnet import stride
+    start = time.time()
+    transform(image = "origin.tif", stride = stride)
+    stop = time.time()
+    t = float((stop - start) / 60)
+    if t > 60.0:
+        print("Total time taken: %.1f hours" % t / 60)
+    else:
+        print("Total time taken: %.1f minutes" % t)
